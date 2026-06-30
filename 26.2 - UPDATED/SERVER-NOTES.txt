@@ -1,0 +1,33 @@
+Dynmap starts successfully on Paper 26.2 with this jar.
+
+Known-good test:
+
+  Paper 26.2 build 31 alpha
+  webserver-port: 3913
+  /dynmap fullrender world
+
+Healthy render stats look like:
+
+  processed=N, rendered=N, updated=N
+  Active render jobs: world
+
+If the log says:
+
+  Failed to start WebServer on address 0.0.0.0:****
+
+Fix one of these server config files:
+
+  plugins/dynmap/configuration.txt
+    webserver-port: 8123
+
+Restart the server after changing the port.
+
+Paper 26.2 also rejects chunk loads from async render threads. This build routes
+the 26.2 fallback chunk cache through the Bukkit scheduler so fullrender can load
+chunks on the server thread.
+
+For large worlds, fullrender can take a long time. Let one world finish before
+starting the Nether or End:
+
+  /dynmap fullrender world_nether
+  /dynmap fullrender world_the_end
