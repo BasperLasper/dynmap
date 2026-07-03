@@ -2,6 +2,7 @@ package org.dynmap.bukkit.helper.v26_2;
 
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,6 +21,7 @@ import org.dynmap.DynmapChunk;
 import org.dynmap.bukkit.helper.BukkitMaterial;
 import org.dynmap.bukkit.helper.BukkitVersionHelper;
 import org.dynmap.bukkit.helper.BukkitWorld;
+import org.dynmap.common.BiomeMap;
 import org.dynmap.renderer.DynmapBlockState;
 import org.dynmap.utils.MapChunkCache;
 import org.dynmap.utils.Polygon;
@@ -34,7 +36,9 @@ import org.dynmap.utils.Polygon;
  */
 public class BukkitVersionHelperSpigot26_2 extends BukkitVersionHelper {
     private static final int SYNTHETIC_STATE_COUNT = 128;
+    private static final int FLUID_STATE_COUNT = 16;
     static final Map<Material, DynmapBlockState> materialToState = new EnumMap<Material, DynmapBlockState>(Material.class);
+    static final Map<String, DynmapBlockState> materialStateToState = new HashMap<String, DynmapBlockState>();
 
     @Override
     public boolean isUnsafeAsync() {
@@ -74,7 +78,11 @@ public class BukkitVersionHelperSpigot26_2 extends BukkitVersionHelper {
 
     @Override
     public int getBiomeBaseID(Object bb) {
-        return (bb instanceof Biome) ? ((Biome) bb).ordinal() : -1;
+        if (!(bb instanceof Biome)) {
+            return -1;
+        }
+        BiomeMap bmap = BiomeMap.byBiomeResourceLocation(getBiomeBaseResourceLocsation(bb));
+        return (bmap != BiomeMap.NULL) ? bmap.getBiomeID() : -1;
     }
 
     @Override
@@ -201,31 +209,90 @@ public class BukkitVersionHelperSpigot26_2 extends BukkitVersionHelper {
     @Override
     public void initializeBlockStates() {
         materialToState.clear();
+        materialStateToState.clear();
         DynmapBlockState.Builder bld = new DynmapBlockState.Builder();
         for (Material material : Material.values()) {
             String blockName = material.name().toLowerCase(Locale.ROOT);
             DynmapBlockState base = null;
-            for (int state = 0; state < SYNTHETIC_STATE_COUNT; state++) {
+            boolean water = isWaterMaterial(material);
+            boolean lava = isLavaMaterial(material);
+            int stateCount = (water || lava) ? FLUID_STATE_COUNT : SYNTHETIC_STATE_COUNT;
+            for (int state = 0; state < stateCount; state++) {
                 bld.setBaseState(base)
                     .setStateIndex(state)
                     .setBlockName(blockName)
-                    .setStateName("meta=" + state)
+                    .setStateName(getSyntheticStateName(material, state))
                     .setMaterial(material.name())
                     .setLegacyBlockID(material.ordinal() + (1 << 20))
                     .setAttenuatesLight(material.isSolid() ? 15 : 0);
-                if (material == Material.AIR) {
+                if (isAirMaterial(material)) {
                     bld.setAir();
                 }
                 if (material.isSolid()) {
                     bld.setSolid();
+                }
+                if (water) {
+                    bld.setCustomWater();
                 }
                 DynmapBlockState dbs = bld.build();
                 if (base == null) {
                     base = dbs;
                     materialToState.put(material, dbs);
                 }
+                materialStateToState.put(getMaterialStateKey(material, dbs.stateName), dbs);
             }
         }
+    }
+
+    static DynmapBlockState getStateByMaterialAndBlockData(Material material, String blockDataString) {
+        String stateName = getStateNameFromBlockData(blockDataString);
+        DynmapBlockState state = materialStateToState.get(getMaterialStateKey(material, stateName));
+        if (state != null) {
+            return state;
+        }
+        return materialToState.get(material);
+    }
+
+    private static String getMaterialStateKey(Material material, String stateName) {
+        return material.name() + "[" + stateName + "]";
+    }
+
+    private static String getStateNameFromBlockData(String blockDataString) {
+        if (blockDataString == null) {
+            return "";
+        }
+        int open = blockDataString.indexOf('[');
+        if (open < 0) {
+            return "";
+        }
+        int close = blockDataString.indexOf(']', open + 1);
+        if (close < 0) {
+            return "";
+        }
+        String stateName = blockDataString.substring(open + 1, close).toLowerCase(Locale.ROOT);
+        return "level=0".equals(stateName) ? "" : stateName;
+    }
+
+    private static String getSyntheticStateName(Material material, int state) {
+        if (isWaterMaterial(material) || isLavaMaterial(material)) {
+            return (state == 0) ? "" : ("level=" + state);
+        }
+        return "meta=" + state;
+    }
+
+    private static boolean isAirMaterial(Material material) {
+        String name = material.name();
+        return name.equals("AIR") || name.endsWith("_AIR");
+    }
+
+    private static boolean isWaterMaterial(Material material) {
+        String name = material.name();
+        return name.equals("WATER") || name.equals("FLOWING_WATER");
+    }
+
+    private static boolean isLavaMaterial(Material material) {
+        String name = material.name();
+        return name.equals("LAVA") || name.equals("FLOWING_LAVA");
     }
 
     @Override

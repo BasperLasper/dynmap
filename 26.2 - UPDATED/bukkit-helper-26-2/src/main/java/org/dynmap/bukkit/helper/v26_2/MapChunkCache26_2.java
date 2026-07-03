@@ -21,17 +21,24 @@ import org.dynmap.renderer.DynmapBlockState;
 public class MapChunkCache26_2 extends MapChunkCacheClassic {
     public static class WrappedSnapshot26_2 implements Snapshot {
         private final ChunkSnapshot ss;
+        private final Method getBlockData;
         private final Method getBlockType;
+        private final Method getAsString;
 
         public WrappedSnapshot26_2(ChunkSnapshot ss) {
             this.ss = ss;
+            this.getBlockData = getSnapshotBlockDataMethod(ss);
             this.getBlockType = getSnapshotBlockTypeMethod(ss);
+            this.getAsString = getBlockDataAsStringMethod(ss, getBlockData);
         }
 
         @Override
         public DynmapBlockState getBlockType(int x, int y, int z) {
-            Material material = getMaterial(x & 0xF, y, z & 0xF);
-            DynmapBlockState state = BukkitVersionHelperSpigot26_2.materialToState.get(material);
+            int bx = x & 0xF;
+            int bz = z & 0xF;
+            Material material = getMaterial(bx, y, bz);
+            String blockDataString = getBlockDataString(bx, y, bz);
+            DynmapBlockState state = BukkitVersionHelperSpigot26_2.getStateByMaterialAndBlockData(material, blockDataString);
             return (state != null) ? state : DynmapBlockState.AIR;
         }
 
@@ -43,6 +50,17 @@ public class MapChunkCache26_2 extends MapChunkCacheClassic {
                 }
             }
             return Material.AIR;
+        }
+
+        private String getBlockDataString(int x, int y, int z) {
+            if ((getBlockData != null) && (getAsString != null)) {
+                try {
+                    Object blockData = getBlockData.invoke(ss, x, y, z);
+                    return (String) getAsString.invoke(blockData);
+                } catch (IllegalAccessException | InvocationTargetException | ClassCastException ignored) {
+                }
+            }
+            return null;
         }
 
         @Override
@@ -79,6 +97,25 @@ public class MapChunkCache26_2 extends MapChunkCacheClassic {
     private static Method getSnapshotBlockTypeMethod(ChunkSnapshot ss) {
         try {
             return ss.getClass().getMethod("getBlockType", int.class, int.class, int.class);
+        } catch (NoSuchMethodException ignored) {
+            return null;
+        }
+    }
+
+    private static Method getSnapshotBlockDataMethod(ChunkSnapshot ss) {
+        try {
+            return ss.getClass().getMethod("getBlockData", int.class, int.class, int.class);
+        } catch (NoSuchMethodException ignored) {
+            return null;
+        }
+    }
+
+    private static Method getBlockDataAsStringMethod(ChunkSnapshot ss, Method getBlockData) {
+        if (getBlockData == null) {
+            return null;
+        }
+        try {
+            return getBlockData.getReturnType().getMethod("getAsString");
         } catch (NoSuchMethodException ignored) {
             return null;
         }
